@@ -1,0 +1,24 @@
+# QARZ DAFTAR — 1-bosqich dalil va cheklovlar
+
+## Nima ishlaydi
+
+- TypeScript / Express 5 REST API, Drizzle sxemasi va PostgreSQL migratsiyalari (`drizzle/`). Pul faqat butun UZS: buyum qiymati va qarz summasi serverda hisoblanadi; ortiqcha to‘lov 409; takroriy to‘lov idempotency key bilan ajratiladi; store row lock va transaction concurrent to‘lovni seriallaydi. Reversal eski yozuvni o‘chirmaydi va auditga tushadi.
+- Admin/employee auth: argon2id, httpOnly SameSite=Strict sessiya cookie, CSRF token, Zod, role va store ID tekshiruvi. Mijoz roziligi matni talab etiladi, raqam 998XXXXXXXXX ga normallashtiriladi, duplicate 409; arxiv/opt-out ishlaydi. Test ma’lumotlari faqat synthetic.
+- 14 kunlik birinchi trial `stores` da; tugaganda yangi qarz va SMS to‘xtaydi, mavjud qarzlarni o‘qish/export va ularni qaytarish ishlaydi. `subscription_attempts`/`subscription_events` keyingi bosqich uchun rezerv; to‘lov faollashtirish implement qilinmagan.
+- SMS outbox `(debt_id, local_date)` dedupe, Asia/Tashkent bir soatlik do‘kon oynasi, consent/opt-out/unpaid/trial/cap qayta tekshiruvi, crashdan keyin noaniq send `unknown`; only explicit reject retry. Sender nomi 11 alphanumeric belgi va worker aynan operator tasdiqlagan `PLAYMOBILE_APPROVED_SENDER` bilan bir xil bo‘lishini talab qiladi. Matn bir segmentli GSM-7. Accepted HTTP javobi delivery emas; delivery faqat callback asosida.
+
+## Ishlatilgan rasmiy manbalar va SMS tanlovi
+
+1. Play Mobile SMS-Broker API: https://playmobile.uz/wp-content/uploads/2022/08/http.pdf — Basic auth, broker-api/send, unique message-id, 200 `Request is received` faqat qabul qilingani, JSON status callback. Hujjatdagi maxfiy material nusxasi repoda saqlanmaydi.
+2. Play Mobile API integratsiyasi: https://playmobile.uz/uz/instruction — sender 11 belgigacha, tarif xabar segmenti/kodlashiga bog‘liq; 160 GSM-7 va 70 Unicode belgi. https://wiki.playmobile.uz/doku.php/en/start — Ucell uchun shablon ro‘yxatdan o‘tishi va reklama tarifi farqi. Aniq joriy shartnoma tarifi, sender approval, callback source/auth usuli operator bilan tasdiqlanmagan.
+3. Eskiz rasmiy API hujjati: https://documenter.getpostman.com/view/663428/RzfmES4z — Bearer token, login/refresh va faqat oldindan tasdiqlangan test SMS matnlari. Qiyos: Play Mobile hujjatida yuborish/status formatlari uchun ochiq tavsif bor, shu sabab Play Mobile adapter tanlandi; Eskiz bilan onboarding ham qilinmadi.
+
+## Tekshirish dalili
+
+`npm run build && npm run test:db`: TypeScript build va ikkala Drizzle migratsiya genuine izolyatsiyalangan PostgreSQL 18 ga tatbiq bo‘ldi; Vitest 2 fayl/10 test o‘tdi (2026-10-10 lokal vaqt). Loopback HTTP test `/health` -> 200 `{data:{status:'ok'}}`, private customers -> 401, invalid JSON -> 400. Ledger, tenant va CSRF/role, overpay/concurrent double-pay, reversal, trial expiry/read/repay, SMS dedupe/paid stop/opt-out, reject retry/callback, crash unknown, approved sender rad etish va delivery status regressiyasi test qilingan. `node dist/worker.js` credentials/flags yo‘qligida 2 kod bilan disabled chiqdi. Docker/psql PATH da topilmadi; test runner dev-only embedded-postgres bilan haqiqiy PostgreSQL serverini loopbackda ishga tushiradi va migratsiya qiladi. Real SMS yuborilmadi.
+
+## Hali production-ready emas
+
+- Provider merchant hisoblari, tasdiqlangan sender, real tarif va segment narxi, Ucell shablonlari, callback manzili/IP allowlist va shartnoma talablarini operator bilan tasdiqlash kerak; SMS xarajat cap do‘kon kiritgan birlik narxiga tayanadi, faktik hisob-fakturani nazorat qilmaydi. `SMS_LIVE_ENABLED` va boshqa darvozalarni ruxsatsiz yoqmang. Callback rasmiy hujjatda kriptografik imzo bermaydi: hozir yuqori entropiyali URL secret + tavsiya etilgan TLS/IP allowlist bilan himoyalanadi; URL redaction va provayder testlari shart. Callback yuborishning `processing` bosqichida juda erta kelsa, status qo‘lda reconcile qilinishi mumkin. Status tarixini alohida event sifatida saqlash va provider bilan reconciliation ham keyingi qadam.
+- Mijozning login/phone-verified o‘zini ko‘rishi yo‘q: OTP provayder va xavfsiz tasdiq mavjud bo‘lmaguncha mijozni authenticate qilib ko‘rsatmaslik kerak. Bu — mijozni ro‘yxatdan o‘tkazishdan alohida vazifa. UI, checkout, platform owner roli keyingi cards. SaaS obuna enforcement hozir trial/paid_until maydonlari asosida, payment provider proof keyingi bosqichda.
+- Production: HTTPS, proxy trust, umumiy distributed rate limiter, secret boshqaruvi, PostgreSQL backup/least privilege, retention/privacy policy, bozor roziligi va deployment smoke/load/security audit talab etiladi. In-memory rate limiter ko‘p replica uchun mos emas. Hisobot/export 100 dan katta ro‘yxatlarda pagination/streaming ehtiyojiga ega. Real provider bilan E2E sinov mavjud emas; hech qanday haqiqiy SMS yetkazilishi yoki tarif kafolatlanmaydi.

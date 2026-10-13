@@ -1,0 +1,46 @@
+# Local development fixture ONLY. Never reuse this database password or volume for production.
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: qarz_local
+      POSTGRES_USER: qarz_local
+      POSTGRES_PASSWORD: local-dev-only-not-for-production
+    volumes:
+      - qarz_local_db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qarz_local -d qarz_local"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  migrate:
+    build:
+      context: .
+      target: builder
+    environment:
+      DATABASE_URL: postgres://qarz_local:local-dev-only-not-for-production@db:5432/qarz_local
+    command: ["node", "node_modules/drizzle-kit/bin.cjs", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://qarz_local:local-dev-only-not-for-production@db:5432/qarz_local
+      NODE_ENV: production
+      PORT: "4000"
+      PAYME_CALLBACK_ENABLED: "0"
+      SMS_LIVE_ENABLED: "0"
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+volumes:
+  qarz_local_db:
